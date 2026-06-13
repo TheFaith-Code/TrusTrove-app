@@ -1,164 +1,186 @@
-# TrusTrove
+<p align="center">
+  <img src="https://trustrove.vercel.app/og-image.png" alt="TrusTrove" width="600" />
+</p>
 
-[![Soroban](https://img.shields.io/badge/Soroban-21.7.6-purple)](https://soroban.stellar.org)
-[![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)](https://www.typescriptlang.org)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+<h1 align="center">TrusTrove</h1>
 
-TrusTrove is a decentralized trade finance protocol built on the Stellar blockchain. Small and Medium Enterprises (SMEs) tokenize outstanding trade invoices as on-chain Stellar assets, securing immediate USDC funding from a shared liquidity pool at a small discount. Liquidity Providers (LPs) supply USDC to the pool to earn yield from the invoice discount fees upon buyer repayment.
+<p align="center">
+  Decentralized trade finance on Stellar — SMEs get paid today, LPs earn yield, no banks involved.
+</p>
 
-This repository contains the Next.js frontend web app, the TypeScript SDK wrapping Soroban contracts, and the Go event indexer.
+<p align="center">
+  <a href="https://github.com/TrusTrove/TrusTrove-app/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/TrusTrove/TrusTrove-app/ci.yml?branch=main&label=build" />
+  </a>
+  <img src="https://img.shields.io/badge/network-Stellar%20Testnet-00c9a7" />
+  <img src="https://img.shields.io/badge/deployed-vercel-black" />
+  <img src="https://img.shields.io/github/license/TrusTrove/TrusTrove-app" />
+</p>
+
+<p align="center">
+  <a href="https://trustrove.vercel.app">Live App</a> ·
+  <a href="https://github.com/TrusTrove/TrusTrove-contract">Smart Contracts</a> ·
+  <a href="https://stellar.expert/explorer/testnet">Stellar Explorer</a>
+</p>
 
 ---
 
-## Repository Structure
+## What is TrusTrove?
 
-This is a monorepo containing the following components:
+Small businesses that sell on credit terms wait 30–90 days to get paid. TrusTrove removes that wait.
 
-- **`apps/web/`**: Next.js 14 App Router frontend application styled as an operations terminal using TailwindCSS and Framer Motion, integrating with the Freighter wallet.
-- **`packages/sdk/`**: Typed TypeScript SDK wrapping Soroban smart contract invocations (Registry, Invoice, Pool, Escrow) and Freighter signing logic.
-- **`indexer/`**: Go 1.22+ event indexer and REST API. It polls Soroban RPC for invoice/pool events, synchronizes the database schema, and exposes invoice querying/auth REST endpoints.
+An SME tokenizes their unpaid invoice on Stellar and receives immediate USDC from a shared liquidity pool at a small discount. The buyer repays the full invoice amount at the due date. Liquidity providers earn yield from those discount fees. Four Soroban smart contracts handle everything — no bank, no broker, no intermediary.
+
+The Asian Development Bank estimates the global trade finance gap at $2.5 trillion annually. Most of it falls on SMEs in emerging markets who cannot access bank credit. TrusTrove runs on Stellar specifically because of its fast finality, low fees, USDC support, and anchor network for fiat on/off ramps.
 
 ---
 
-## Architecture Diagram
+## Maintainers
 
-```mermaid
-graph TD
-    SME[SME Issuer] -->|Creates/Lists Invoice| Frontend[Next.js App / SDK]
-    LP[Liquidity Provider] -->|Deposits USDC / Funds Invoice| Frontend
-    Buyer[Buyer] -->|Confirms Delivery / Repays Invoice| Frontend
-    
-    Frontend -->|Invokes Contracts| Soroban[Soroban Smart Contracts]
-    Soroban -->|Emits Events| Node[Stellar Soroban RPC Node]
-    
-    GoIndexer[Go Event Indexer] -->|Polls Events| Node
-    GoIndexer -->|Writes Event Logs & State| PostgreSQL[(PostgreSQL Database)]
-    
-    GoAPI[Go REST API] -->|Reads Invoices & Pool Stats| PostgreSQL
-    Frontend -->|Fetches Data & SEP-10 Auth| GoAPI
+| | Name | Role | GitHub | Telegram |
+|---|---|---|---|---|
+| | **Fuhad (K1NGD4VID)** | Founder & Lead Developer | [@k1ngd4vid](https://github.com/k1ngd4vid) | [@k1ngd4vid](https://t.me/k1ngd4vid) |
 
-    subgraph Smart Contracts
-        registry[Registry Contract]
-        invoice[Invoice Contract]
-        pool[Pool Contract]
-        escrow[Escrow Contract]
-        
-        registry -.->|verifies profiles| invoice
-        invoice -.->|requests funding| pool
-        pool -.->|locks collateral| escrow
-    end
+Join the contributor community: **[t.me/trusttrove](https://t.me/trusttrove)**
+
+---
+
+## How It Works
+
+```
+SME creates invoice on-chain
+       ↓
+Lists for financing with a chosen discount rate
+       ↓
+Pool funds the invoice — SME receives USDC immediately
+       ↓
+Goods shipped → buyer confirms delivery
+       ↓
+Buyer repays face value at due date
+       ↓
+Yield distributes to LP shares
 ```
 
 ---
 
-## Contract Function Reference
+## Tech Stack
 
-### 1. Registry Contract (`registry_contract`)
-Tracks business profile verification status for Issuers (SMEs) and Buyers.
-
-| Function | Arguments | Returns | Description |
-|---|---|---|---|
-| `initialize` | `admin: Address` | `void` | Set admin key. |
-| `register_issuer` | `address: Address`, `metadata: Map<String, String>` | `bool` | Register a new SME profile on-chain. |
-| `register_buyer` | `address: Address`, `metadata: Map<String, String>` | `bool` | Register a buyer trade profile. |
-| `is_verified` | `address: Address` | `bool` | Verify if address is a registered profile. |
-| `get_profile` | `address: Address` | `Profile` | Retrieve full profile metadata. |
-| `revoke` | `address: Address` | `bool` | Terminate profile verification. |
-
-### 2. Invoice Contract (`invoice_contract`)
-Controls tokenized invoice assets and handles lifecycle states.
-
-| Function | Arguments | Returns | Description |
-|---|---|---|---|
-| `initialize` | `admin: Address`, `registry_contract: Address` | `void` | Set dependencies. |
-| `set_pool_contract` | `pool_contract: Address` | `void` | Wire pool address for trigger funding. |
-| `create` | `issuer: Address`, `buyer: Address`, `face_value: u128`, `due_date: u64` | `BytesN<32>` | Tokenize a trade invoice obligation. |
-| `list_for_financing` | `invoice_id: BytesN<32>`, `discount_bps: u32` | `bool` | Set discount terms and list on marketplace. |
-| `mark_funded` | `invoice_id: BytesN<32>`, `funded_amount: u128` | `bool` | Invoked by pool when financing is approved. |
-| `mark_shipped` | `invoice_id: BytesN<32>` | `bool` | SME records shipment, changing status to Active. |
-| `confirm_delivery` | `invoice_id: BytesN<32>`, `confirmer: Address` | `bool` | Confirms delivery receipt, changing to Confirmed. |
-| `repay` | `invoice_id: BytesN<32>` | `bool` | Buyer settles full face value on due date. |
-| `trigger_default` | `invoice_id: BytesN<32>` | `bool` | Marks overdue invoice as defaulted. |
-
-### 3. Pool Contract (`pool_contract`)
-Controls shared liquidity pool deposits, LP shares, and yield calculations.
-
-| Function | Arguments | Returns | Description |
-|---|---|---|---|
-| `initialize` | `admin: Address`, `invoice: Address`, `escrow: Address`, `usdc: Address` | `void` | Connects dependencies. |
-| `deposit` | `lp: Address`, `usdc_amount: u128` | `u128` | Supply USDC to pool in return for LP shares. |
-| `withdraw` | `lp: Address`, `shares: u128` | `u128` | Burn shares to withdraw USDC and accrued yields. |
-| `fund_invoice` | `invoice_id: BytesN<32>` | `bool` | Deploy pool USDC to fund a listed invoice. |
-| `receive_repayment` | `invoice_id: BytesN<32>`, `amount: u128` | `bool` | Process buyer repayment and allocate yield. |
-| `handle_default` | `invoice_id: BytesN<32>` | `bool` | Trigger recovery workflow for defaulted invoices. |
-
-### 4. Escrow Contract (`escrow_contract`)
-Safeguards invoice collateral and handles repayment distributions.
-
-| Function | Arguments | Returns | Description |
-|---|---|---|---|
-| `initialize` | `admin: Address`, `pool_contract: Address`, `usdc: Address` | `void` | Wire pool address. |
-| `lock` | `invoice_id: BytesN<32>`, `amount: u128` | `bool` | Lock financed USDC in escrow. |
-| `release_to_issuer` | `invoice_id: BytesN<32>` | `bool` | Unlock USDC to SME upon shipment confirmation. |
-| `release_to_pool` | `invoice_id: BytesN<32>`, `repayment_amount: u128` | `bool` | Release buyer repayment back to pool. |
+| Layer | Technology |
+|-------|-----------|
+| Smart Contracts | Rust, Soroban SDK — [TrusTrove-contract](https://github.com/TrusTrove/TrusTrove-contract) |
+| Frontend | Next.js 14, TypeScript, Tailwind CSS, Framer Motion |
+| Wallet | Freighter browser extension |
+| Payments | USDC on Stellar |
+| SDK | Custom TypeScript contract client wrappers |
+| Indexer | Go 1.22, chi router, pgx v5 |
+| Database | PostgreSQL 15 |
+| Hosting | Vercel (frontend), Render (indexer + database) |
 
 ---
 
-## Frontend Route Map
+## Deployed Contracts (Stellar Testnet)
 
-All screens adapt to desktop terminal densities and mobile-first thumb zones (for logistics tracking).
-
-| Route | Auth | Primary Action | Target Persona |
-|---|---|---|---|
-| `/` | Public | View Stats, Economic calculations | SME, LP, Reviewer |
-| `/dashboard` | Connected Wallet | Issue Invoices, Track Obligations | SME Issuer |
-| `/invoice/[invoiceId]` | Connected Wallet | Ship, Confirm, Repay, Default | Issuer, Buyer, LP |
-| `/marketplace` | Public | Audit Listed Invoices | LPs, Public |
-| `/lp` | Connected Wallet | Deposit USDC, Withdraw LP positions | Liquidity Providers |
+| Contract | Address |
+|----------|---------|
+| registry_contract | `CABGWVIZFF62FG67ZGFEP67NEEY4WYTMFURDMFTKKNRDAFPKPOJDTN4C` |
+| invoice_contract | `CA4O3MR7LWHRSUDBNU6FY6UDFFYBN7TGBZXBDZB4OYYXFYXIFJ6RJF6B` |
+| escrow_contract | `CAJWGUKDTTC3SKN4RAAY72J4DVIIYSCFHX6GIMNTT22ABMISJK4GBCEH` |
+| pool_contract | `CAKEWH7SJCXGV2MH2WZYIX3QDPTSSBQFXYVYBOWAGLNBBZMPLE2US6CS` |
 
 ---
 
-## Local Development Setup
+## Quick Start
 
-### 1. Environment Configuration
-Copy the template configuration:
+### Prerequisites
+
+- Node.js 20+
+- pnpm 9+
+- Go 1.22+
+- Docker
+- [Freighter](https://freighter.app) browser extension
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/TrusTrove/TrusTrove-app.git
+cd TrusTrove-app
+pnpm install
+```
+
+### 2. Set up environment variables
+
 ```bash
 cp .env.example .env.local
 ```
-Configure environment variables:
-- `NEXT_PUBLIC_STELLAR_NETWORK`: `testnet`
-- `NEXT_PUBLIC_SOROBAN_RPC_URL`: `https://soroban-testnet.stellar.org`
-- `DATABASE_URL`: `postgres://postgres:postgres@localhost:5432/trusttrove?sslmode=disable`
 
-### 2. Start Database
-Spin up the local PostgreSQL database using docker-compose:
+The contract IDs are pre-filled with the deployed testnet addresses. No changes needed to run locally.
+
+### 3. Start PostgreSQL
+
 ```bash
 docker-compose up -d
 ```
 
-### 3. Start Indexer & API
+### 4. Start the indexer
+
 ```bash
 cd indexer
-go mod tidy
-go run .
+go run main.go
 ```
 
-### 4. Run Frontend
-From the root directory, install workspace dependencies, build the packages, and run:
+### 5. Start the frontend
+
 ```bash
-pnpm install
-pnpm build
 pnpm --filter web dev
 ```
-Open [http://localhost:3000](http://localhost:3000) to view the application.
+
+Open [http://localhost:3000](http://localhost:3000), connect Freighter on testnet, and get testnet USDC from [demo.stellar.org](https://demo.stellar.org).
 
 ---
 
 ## Contributing
 
-1. Fork the repository.
-2. Create your feature branch (`git checkout -b feature/amazing-feature`).
-3. Commit your changes (`git commit -m 'Add amazing feature'`).
-4. Push to the branch (`git push origin feature/amazing-feature`).
-5. Open a Pull Request.
+We welcome contributions from the Stellar community. Before opening a PR, please read [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+### Find an issue
+
+Browse open issues labeled by complexity:
+- `complexity:low` — isolated scope, good starting point
+- `complexity:medium` — touches 2–3 components
+- `complexity:high` — architectural changes
+
+### Branch naming
+
+- Features: `feat/123-short-description`
+- Fixes: `fix/456-short-description`
+- Docs: `docs/short-description`
+
+### Commit format
+
+We use Conventional Commits:
+```
+feat(web): add invoice status timeline component
+fix(sdk): handle soroban rpc timeout with retry
+docs(indexer): add pagination endpoint documentation
+```
+
+### PR process
+
+1. Assign yourself to the issue before starting
+2. Branch from `main`
+3. Open a draft PR early so maintainers can give early feedback
+4. All checks must pass before review
+
+If you have questions, reach us on Telegram: **[t.me/trusttrove](https://t.me/trusttrove)**
+
+---
+
+## License
+
+MIT
+
+---
+
+## Contributors
+
+[![Contributors](https://contrib.rocks/image?repo=TrusTrove/TrusTrove-app)](https://github.com/TrusTrove/TrusTrove-app/graphs/contributors)
